@@ -1,6 +1,16 @@
-//命令注册
+// 常量定义
+const jsonPath = "plugins/post/post.json";
+const langFilePath = "plugins/post/lang/zh_CN.json";
+const LANG_CONFIG_DIR = "plugins/post/lang/";
+const PERCENT_SIGN = "%";
+const langFile = new JsonConfigFile(langFilePath);
+const jsonStr = langFile.read();
+var LANG = JSON.parse(jsonStr);
+const line = LANG.LINE;
+
+// 命令注册
 mc.listen("onServerStarted", () => {
-    let postCmd = mc.newCommand("post", "§r帖子功能",PermType.Any);
+    let postCmd = mc.newCommand("post", LANG.TITLE_MAIN_FORM, PermType.Any);
     postCmd.overload([])
     postCmd.setCallback((cmd,origin,output,results) => {
         switch (origin.type) {
@@ -11,52 +21,54 @@ mc.listen("onServerStarted", () => {
     postCmd.setup();
 });
 
-//常量
-const jsonPath = "plugins/post/post.json";
-const line = "\n§7__________________________§r\n"
-const mainFormButtons = [
-    //按钮Label 是否需要op 跳转到功能
-    ["新建帖子 >",0,newPost,"textures/ui/icon_book_writable"],
-    ["所有帖子 >",0,allPost,"textures/ui/feedIcon"],
-    ["我的帖子 >",0,myPost,"textures/ui/mute_off"],
-    ["编辑草稿 >",0,editDraft,"textures/ui/editIcon"],
-    ["通过 ID 查询帖子 >",1,requireById,"textures/ui/spyglass_flat"],
-    ["管理已举报的帖子 >",1,reportMng,"textures/ui/hammer_l"],
-    ["发帖设置 >",1,postSettings,"textures/ui/dev_glyph_color"]
-];
-
-//初次运行写入配置文件
+// 初次运行写入配置文件
 if (!File.exists(jsonPath)) {
     let defaultJson = '{"postConfig":{"name":"Server","textLimit":100,"titleLimit":35,"postsPerPage":10,"enableCaptcha":false},"posts":[],"draft":[],"report":[]}';
     const postFile = new JsonConfigFile(jsonPath, defaultJson);
 }
 
-//主窗体
+// 主窗体
 function main(pl){
+    LANG = loadLangFile(pl);
+    const mainFormButtons = [
+        //按钮Label 是否需要op 跳转到功能
+        [LANG.BUTTON_NEWPOST_FORM,0,newPost,"textures/ui/icon_book_writable"],
+        [LANG.BUTTON_ALLPOST_FORM,0,allPost,"textures/ui/feedIcon"],
+        [LANG.BUTTON_MYPOST_FORM,0,myPost,"textures/ui/mute_off"],
+        [LANG.BUTTON_EDITDRAFT_FORM,0,editDraft,"textures/ui/editIcon"],
+        [LANG.BUTTON_REQUIREBYID_FORM,1,requireById,"textures/ui/spyglass_flat"],
+        [LANG.BUTTON_REPORTMNG_FORM,1,reportMng,"textures/ui/hammer_l"],
+        [LANG.BUTTON_POSTSETTINGS_FORM,1,postSettings,"textures/ui/dev_glyph_color"],
+        [LANG.BUTTON_LANGUAGE,0,languageSetting,"textures/ui/language_glyph"]
+    ];
     let mainForm = mc.newSimpleForm();
     let isOP = pl.isOP();
     let content = "";
-    mainForm.setTitle("帖子");
+    let tmpArr = [];
+    mainForm.setTitle(LANG.TITLE_MAIN_FORM);
     mainForm.setContent(content);
     for (let i=0;i < mainFormButtons.length;i++) {
         let label = mainFormButtons[i][0];
         if (mainFormButtons[i][1] == 0) {
             mainForm.addButton(label, mainFormButtons[i][3]);
+            tmpArr.push(i);
         } else if (isOP) {
             mainForm.addButton(label, mainFormButtons[i][3]);
+            tmpArr.push(i);
         }
     }
     pl.sendForm(mainForm, (pl, id) => {
         if (id != null) {
             switch (id) {
                 case id:
-                    mainFormButtons[id][2](pl);
+                    LANG = loadLangFile(pl);
+                    mainFormButtons[tmpArr[id]][2](pl);
             }
         }
     });
 }
 
-//所有帖子 窗体
+// 所有帖子 窗体
 function allPost(pl, page) {
     const postFile = new JsonConfigFile(jsonPath);
     let posts = postFile.get("posts");
@@ -82,15 +94,15 @@ function allPost(pl, page) {
     }
     if (postCount == 0) {
         let noPostForm = mc.newSimpleForm();
-        noPostForm.setTitle("所有帖子");
-        noPostForm.setContent("没有找到任何一个帖子...");
-        noPostForm.addButton("新建一个帖子 >","textures/ui/mute_off");
-        noPostForm.addButton("< 返回","textures/ui/undoArrow");
+        noPostForm.setTitle(serverName);
+        noPostForm.setContent(LANG.CONTENT_ALLPOST_NOT_FOUND);
+        noPostForm.addButton(LANG.BUTTON_NEWPOST,"textures/ui/mute_off");
+        noPostForm.addButton(LANG.BUTTON_BACK,"textures/ui/undoArrow");
         pl.sendForm(noPostForm, (pl, id) => {
             if (id != null) {
                 switch (id) {
                     case 0:
-                        newPost(pl,null,null,"编辑这里的第一个帖子",null,0,1);
+                        newPost(pl,null,null,LANG.CONTENT_ALLPOST_EDIT_FIRST_POST,null,0,1);
                         break;
                     case 1:
                         main(pl);
@@ -119,25 +131,47 @@ function allPost(pl, page) {
         let text = postFile.get("posts")[id]["text"];
         let playerName = postFile.get("posts")[id]["playerName"];
         let system = postFile.get("posts")[id]["device"];
-        let time = postFile.get("posts")[id]["time"];
+        let tmpTime = postFile.get("posts")[id]["time"];
         let like = postFile.get("posts")[id]["likedPlayer"].length;
         let postComment = postFile.get("posts")[id]["comment"];
         idArr.push("#" + String(id) + " §r(" + title + "§r)");
-        allPostText = `${allPostText}${line}\n§l${title}§r\n${text}\n\n§7附带信息:\n[${playerName}] [${system}] [#${id}]\n[${time}]\n[赞 ${like}]  [评论 ${postComment.length}]§r`
+        let time;
+        if (typeof(tmpTime) == 'string') {    // 处理 time (版本遗留)
+            time = tmpTime;
+        } else {
+            let second, minute, hour, day;
+            var date = new Date();
+            var now = date.getTime();
+            let difference = Math.floor((now - tmpTime) / 1000);
+            if (difference < 60) {
+                second = difference;
+                time = String(second) + LANG.SECOND;
+            } else if (difference < 3600) {
+                minute = Math.floor(difference / 60);
+                time = String(minute) + LANG.MINUTE;
+            } else if (difference < 86400) {
+                hour = Math.floor(difference / 3600);
+                time = String(hour) + LANG.HOUR;
+            } else {
+                day = Math.floor(difference / 86400);
+                time = String(day) + LANG.DAY;
+            }
+        }
+        allPostText = tr(LANG.TEXT_ALLPOST + `§r`);
         allPostForm.addLabel(allPostText);
         // 获取是否点赞
         let postId = parseInt(allId[postsPerPage * (page - 1) + i]);
         let likeStatus = false;
         if (posts[postId]["likedPlayer"].indexOf(pl.realName) != -1) likeStatus = true;
-        allPostForm.addSwitch("点赞", likeStatus);    // id: 1 3 5 ...
+        allPostForm.addSwitch(LANG.LIKE, likeStatus);    // id: 1 3 5 ...
         allPostText = "";
         likeControlList.push(controlCount+1);    // 控件序号
         controlCount = controlCount + 2;
     }
-    allPostForm.addStepSlider(`${line}\n\n< 第 ${page} 页，共 ${pageCount} 页 >\n跳转到页码`, pages, page - 1);    // controlCount
-    allPostForm.addLabel("\n< 操作 >\n");    // controlCount + 1
-    allPostForm.addStepSlider("选择操作", ["无","查看详情","评论","举报","新建帖子"]);    // controlCount + 2
-    allPostForm.addStepSlider("选择帖子", idArr);    // controlCount + 3
+    allPostForm.addStepSlider(tr(LANG.TEXT_PAGE), pages, page - 1);    // controlCount
+    allPostForm.addLabel("\n" + LANG.OPERATION + "\n");    // controlCount + 1
+    allPostForm.addStepSlider(LANG.SELECT_OPERATION, [LANG.NONE,LANG.VIEW_POST_DETAIL,LANG.COMMENT,LANG.REPORT,LANG.NEWPOST]);    // controlCount + 2
+    allPostForm.addStepSlider(LANG.SELECT_POST, idArr);    // controlCount + 3
     pl.sendForm(allPostForm, (pl, data) => {
         if (data != null) {
             const postFile = new JsonConfigFile(jsonPath);
@@ -191,7 +225,7 @@ function allPost(pl, page) {
     });
 }
 
-//我的帖子 窗体
+// 我的帖子 窗体
 function myPost(pl, page) {
     const postFile = new JsonConfigFile(jsonPath);
     let posts = postFile.get("posts");
@@ -216,15 +250,15 @@ function myPost(pl, page) {
     }
     if (postCount == 0) {
         let noPostForm = mc.newSimpleForm();
-        noPostForm.setTitle("我的帖子");
-        noPostForm.setContent("没有找到你发的任何一个帖子...");
-        noPostForm.addButton("新建一个帖子 >","textures/ui/mute_off");
-        noPostForm.addButton("< 返回","textures/ui/undoArrow");
+        noPostForm.setTitle(LANG.TITLE_MYPOST_FORM);
+        noPostForm.setContent(LANG.CONTENT_MYPOST_NOT_FOUND);
+        noPostForm.addButton(LANG.BUTTON_NEWPOST,"textures/ui/mute_off");
+        noPostForm.addButton(LANG.BUTTON_BACK,"textures/ui/undoArrow");
         pl.sendForm(noPostForm, (pl, id) => {
             if (id != null) {
                 switch (id) {
                     case 0:
-                        newPost(pl,null,null,"编辑你的第一个帖子",null,1,1);
+                        newPost(pl,null,null,LANG.CONTENT_MYPOST_EDIT_FIRST_POST,null,1,1);
                         break;
                     case 1:
                         main(pl);
@@ -244,31 +278,52 @@ function myPost(pl, page) {
     if (pageCount == page) {
         postCountOnCtPage = (postCount - 1) % postsPerPage + 1;
     }
-    myPostForm.setTitle(`我的帖子`);
+    myPostForm.setTitle(LANG.TITLE_MYPOST_FORM);
     for (let i=0; i < postCountOnCtPage; i++) {
         let id = parseInt(allId[postsPerPage * (page - 1) + i]);
         let title = postFile.get("posts")[id]["title"];
         let text = postFile.get("posts")[id]["text"];
         let playerName = postFile.get("posts")[id]["playerName"];
         let system = postFile.get("posts")[id]["device"];
-        let time = postFile.get("posts")[id]["time"];
+        let tmpTime = postFile.get("posts")[id]["time"];
         let like = postFile.get("posts")[id]["likedPlayer"].length;
         let postComment = postFile.get("posts")[id]["comment"];
+        if (typeof(tmpTime) == 'string') {    // 处理 time (版本遗留)
+            time = tmpTime;
+        } else {
+            let second, minute, hour, day;
+            var date = new Date();
+            var now = date.getTime();
+            let difference = Math.floor((now - tmpTime) / 1000);
+            if (difference < 60) {
+                second = difference;
+                time = String(second) + LANG.SECOND;
+            } else if (difference < 3600) {
+                minute = Math.floor(difference / 60);
+                time = String(minute) + LANG.MINUTE;
+            } else if (difference < 86400) {
+                hour = Math.floor(difference / 3600);
+                time = String(hour) + LANG.HOUR;
+            } else {
+                day = Math.floor(difference / 86400);
+                time = String(day) + LANG.DAY;
+            }
+        }
         idArr.push("#" + String(id) + " §r(" + title + "§r)");
-        myPostText = `${myPostText}${line}\n§l${title}§r\n${text}\n\n§7附带信息:\n[${system}] [#${id}]\n[${time}]\n[赞 ${like}]  [评论 ${postComment.length}]§r`
+        myPostText = tr(LANG.TEXT_MYPOST);
         myPostForm.addLabel(myPostText);
         let postId = parseInt(allId[postsPerPage * (page - 1) + i]);
         let likeStatus = false;
         if (posts[postId]["likedPlayer"].indexOf(pl.realName) != -1) likeStatus = true;
-        myPostForm.addSwitch("点赞", likeStatus);    // id: 1 3 5 ...
+        myPostForm.addSwitch(LANG.LIKE, likeStatus);    // id: 1 3 5 ...
         likeControlList.push(controlCount+1);
         controlCount = controlCount + 2;
         myPostText = "";
     }
-    myPostForm.addStepSlider(`${line}\n\n< 第 ${page} 页，共 ${pageCount} 页 >\n跳转到页码`, pages, page - 1);    // controlCount
-    myPostForm.addLabel("\n< 操作 >\n");    // controlCount + 1
-    myPostForm.addStepSlider("选择操作", ["无","查看详情","评论","删除","新建帖子"]);    // controlCount + 2
-    myPostForm.addStepSlider("选择帖子", idArr);    // controlCount + 3
+    myPostForm.addStepSlider(tr(LANG.TEXT_PAGE), pages, page - 1);    // controlCount
+    myPostForm.addLabel("\n" + LANG.OPERATION + "\n");    // controlCount + 1
+    myPostForm.addStepSlider(LANG.SELECT_OPERATION, [LANG.NONE,LANG.VIEW_POST_DETAIL,LANG.COMMENT,LANG.DELETE,LANG.NEWPOST]);    // controlCount + 2
+    myPostForm.addStepSlider(LANG.SELECT_POST, idArr);    // controlCount + 3
     pl.sendForm(myPostForm, (pl, data) => {
         if (data != null) {
             const postFile = new JsonConfigFile(jsonPath);
@@ -319,20 +374,20 @@ function myPost(pl, page) {
     });
 }
 
-//新建帖子 窗体
+// 新建帖子 窗体
 function newPost(pl,title,text,content,draftId,formId,page) {    // 3
     const postFile = new JsonConfigFile(jsonPath);
     let newPostForm = mc.newCustomForm();
-    let option = ["发布","存草稿"];
-    if (draftId != null) option = ["发布","存草稿","§c删除草稿"];
+    let option = [LANG.RELEASE,LANG.SAVE_DRAFT];
+    if (draftId != null) option = [LANG.RELEASE,LANG.SAVE_DRAFT,"§c" + LANG.DELETE_DRAFT];
     if (title == null) title = "";
     if (text == null) text = "";
     if (content == null) content = "";
-    newPostForm.setTitle("新建帖子");
-    newPostForm.addInput("标题","请输入标题",title);
-    newPostForm.addInput("正文","请输入正文",text);
+    newPostForm.setTitle(LANG.TITLE_NEWPOST_FORM);
+    newPostForm.addInput(LANG.TITLE, LANG.INPUT_TITLE, title);
+    newPostForm.addInput(LANG.TEXT, LANG.INPUT_TEXT, text);
     newPostForm.addLabel(content);
-    newPostForm.addStepSlider("操作", option);
+    newPostForm.addStepSlider(LANG.SELECT_OPERATION, option);
     pl.sendForm(newPostForm, (pl, data) => {
         if (data != null) {
             let title = data[0];
@@ -343,7 +398,7 @@ function newPost(pl,title,text,content,draftId,formId,page) {    // 3
             if (operation == 1) {
                 const postFile = new JsonConfigFile(jsonPath);
                 if (title.length == 0 && text.length == 0) {
-                    content = "保存失败：草稿无内容";
+                    content = LANG.SAVE_FAILED_DRAFT_NO_CONTENT;
                     newPost(pl,title,text,content,draftId,formId,page);
                     return;
                 }
@@ -373,11 +428,11 @@ function newPost(pl,title,text,content,draftId,formId,page) {    // 3
                 whatToDoNext(pl, formId, page);
             } else if (operation == 0) {
                 if (title.length > limit1 || text.length > limit2) { 
-                    let content = `发布失败：超出字符限制\n标题字数 ===> ${title.length}/${limit1}\n正文字数 ===> ${text.length}/${limit2}`;
+                    let content = LANG.RELEASE_FAILED_EXCEEDED + "\n" + tr(RELEASE_FAILED_LIMIT);
                     newPost(pl,title,text,content,draftId,formId,page);
                     return;
                 } else if (title.length == 0 || text.length == 0) {
-                    let content = `发布失败：标题与正文不可留空`;
+                    let content = LANG.RELEASE_FAILED_EMPTY;
                     newPost(pl,title,text,content,draftId,formId,page);
                     return;
                 }
@@ -405,7 +460,7 @@ function newPost(pl,title,text,content,draftId,formId,page) {    // 3
     });
 }
 
-//编辑草稿 窗体
+// 编辑草稿 窗体
 function editDraft(pl) { // formId == 2
     const postFile = new JsonConfigFile(jsonPath);
     let draftForm = mc.newSimpleForm();
@@ -414,26 +469,26 @@ function editDraft(pl) { // formId == 2
     let buttonText = "";
     let title = "";
     let text = "";
-    draftForm.setTitle("编辑草稿");
-    draftForm.addButton("< 返回","textures/ui/undoArrow");
+    draftForm.setTitle(LANG.TITLE_EDITDRAFT_FORM);
+    draftForm.addButton(LANG.BUTTON_BACK,"textures/ui/undoArrow");
     for (let i=postFile.get("draft").length-1; i>=0; i--) {
         if (postFile.get("draft")[i]["playerXuid"] == pl.xuid && postFile.get("draft")[i]["visible"] == true) {
             draftIdList.push(String(i));
             if (postFile.get("draft")[i]["title"] != "") {
                 buttonText = postFile.get("draft")[i]["title"];
             } else {
-                buttonText = `[无标题草稿 #${i}]`
+                buttonText = `[` + LANG.UNTITLED_DRAFT + `#${i}]`
             }
             draftForm.addButton(buttonText);
         }
     }
-    draftForm.setContent(`你有 ${draftIdList.length} 个草稿`);
+    draftForm.setContent(tr(LANG.CONTENT_DRAFT_COUNT));
     if (draftIdList.length == 0) {
         let noDraftForm = mc.newSimpleForm();
-        noDraftForm.setTitle("编辑草稿");
-        noDraftForm.setContent("没有发现你的任何一份草稿...");
-        noDraftForm.addButton("新建一个帖子 >","textures/ui/mute_off");
-        noDraftForm.addButton("< 返回","textures/ui/undoArrow");
+        noDraftForm.setTitle(LANG.TITLE_EDITDRAFT_FORM);
+        noDraftForm.setContent(LANG.CONTENT_DRAFT_NOT_FOUND);
+        noDraftForm.addButton(LANG.BUTTON_NEWPOST,"textures/ui/mute_off");
+        noDraftForm.addButton(LANG.BUTTON_BACK,"textures/ui/undoArrow");
         pl.sendForm(noDraftForm, (pl, id) => {
             if (id != null) {
                 switch (id) {
@@ -461,14 +516,14 @@ function editDraft(pl) { // formId == 2
     });
 }
 
-//举报处理 窗体
+// 举报处理 窗体
 function reportMng(pl) {
     const postFile = new JsonConfigFile(jsonPath);
     let reportedPost = postFile.get("report");
     let reportMngForm = mc.newSimpleForm();
-    reportMngForm.setTitle("已被举报的帖子");
-    reportMngForm.addButton("< 返回","textures/ui/undoArrow");
-    if (reportedPost.length == 0) reportMngForm.setContent("空空如也");
+    reportMngForm.setTitle(LANG.TITLE_REPORTMNG_FORM);
+    reportMngForm.addButton(LANG.BUTTON_BACK,"textures/ui/undoArrow");
+    if (reportedPost.length == 0) reportMngForm.setContent(LANG.EMPTY);
     for (let i=reportedPost.length-1; i>=0; i--) {
         let title = postFile.get("posts")[reportedPost[i]["postId"]]["title"];
         let postId = postFile.get("posts")[reportedPost[i]["postId"]]["id"];
@@ -498,10 +553,15 @@ function reportDetail(pl, reportId) {
     let text = postFile.get("posts")[postId]["text"];
     let playerName = postFile.get("posts")[postId]["playerName"];
     let system = postFile.get("posts")[postId]["device"];
-    let time = postFile.get("posts")[postId]["time"];
+    let tmpTime = postFile.get("posts")[postId]["time"];
     let like = postFile.get("posts")[postId]["likedPlayer"].length;
     let postComment = postFile.get("posts")[postId]["comment"];
-    label = `§l${title}§r\n${text}\n\n§7附带信息:\n[${playerName}] [${system}] [#${postId}]\n[${time}]\n[赞 ${like}]  [评论 ${postComment.length}]§r`
+    if (typeof(tmpTime) == 'string') {    // 处理 time (版本遗留)
+        time = tmpTime;
+    } else {
+        time = new Date(tmpTime).toISOString();
+    }
+    label = tr(LANG.TEXT_REPORT_DETAIL) + `§r`;
     if (like != 0) {
         label = label + "\n\n§4❤§r " + postFile.get("posts")[postId]["likedPlayer"][0];
         for (let i=1; i<like; i++) {
@@ -509,17 +569,22 @@ function reportDetail(pl, reportId) {
         }
     }
     let whistleblowerCnt = postFile.get("report")[reportId]["whistleblower"].length;
-    label = label + "\n\n\n>> 共有" + String(whistleblowerCnt) + "条举报 <<\n";
+    label = label + "\n\n\n" + tr(LANG.TEXT_REPORT_COUNT) + "\n";
     for (let i=whistleblowerCnt-1; i>=0; i--) {
         let whistleblower = postFile.get("report")[reportId]["whistleblower"][i];
-        let time = postFile.get("report")[reportId]["time"][i];
+        let tmpTime = postFile.get("report")[reportId]["time"][i];
         let remark = postFile.get("report")[reportId]["remark"][i];
-        label = `${label}\n举报者：${whistleblower}\n时间：${time}\n备注：${remark}\n`;
+        if (typeof(tmpTime) == 'string') {    // 处理 time (版本遗留)
+            time = tmpTime;
+        } else {
+            time = new Date(tmpTime).toISOString();
+        }
+        label = tr(LANG.TEXT_WHISTLEBLOWER);
     }
-    reportDetailsForm.setTitle(`[#${postId}] 举报处理`);
+    reportDetailsForm.setTitle(tr(LANG.TITLE_REPORT_DETAIL));
     reportDetailsForm.setContent(label);
-    reportDetailsForm.addButton(`可见：${postFile.get("posts")[postId]["visible"]}`);
-    reportDetailsForm.addButton(`已处理：${postFile.get("report")[reportId]["isProcessed"]}`);
+    reportDetailsForm.addButton(LANG.VISIBLE + `: ${postFile.get("posts")[postId]["visible"]}`);
+    reportDetailsForm.addButton(LANG.PROCESSED + `: ${postFile.get("report")[reportId]["isProcessed"]}`);
     pl.sendForm(reportDetailsForm, (pl, id) => {
         if (id == null) {
             reportMng(pl);
@@ -542,7 +607,7 @@ function reportDetail(pl, reportId) {
     });
 }
 
-//插件设置 窗体
+// 插件设置 窗体
 function postSettings(pl) {
     const postFile = new JsonConfigFile(jsonPath);
     let postConfig = postFile.get("postConfig");
@@ -554,12 +619,12 @@ function postSettings(pl) {
     let configArray = [name, titleLimit, textLimit, postsPerPage, enableCaptcha];
     let configArray2 = ["name", "titleLimit", "textLimit", "postsPerPage", "enableCaptcha"];
     let settingsForm = mc.newCustomForm();
-    settingsForm.setTitle("设置");
-    settingsForm.addInput("名称", name, name);
-    settingsForm.addSlider("标题文本字数限制",1,100,1,titleLimit);
-    settingsForm.addSlider("正文文本字数限制",1,100,1,textLimit);
-    settingsForm.addSlider("每页显示帖子数量",1,100,1,postsPerPage);
-    settingsForm.addSwitch("启用发帖的人机验证",enableCaptcha)
+    settingsForm.setTitle(LANG.TITLE_POSTSETTINGS_FORM);
+    settingsForm.addInput(LANG.NAME, name, name);
+    settingsForm.addSlider(LANG.TITLE_LIMIT,1,100,1,titleLimit);
+    settingsForm.addSlider(LANG.TEXT_LIMIT,1,100,1,textLimit);
+    settingsForm.addSlider(LANG.POST_CNT_PER_PAGE,1,100,1,postsPerPage);
+    settingsForm.addSwitch(LANG.ENABLE_CAPTCHA,enableCaptcha)
     pl.sendForm(settingsForm, (pl, data) => {
         if (data != null) {
             for (let i = 0; i<configArray.length; i++) {
@@ -568,24 +633,24 @@ function postSettings(pl) {
                 }
             }
             postFile.set("postConfig", postConfig);
-            pl.tell("配置已保存");
+            pl.tell(LANG.CONFIG_SAVED);
         }
     });
 }
 
-//确认
+// 确认
 function confirm(pl,title,text,draftId,formId,page) {
     const postFile = new JsonConfigFile(jsonPath);
     let confirmForm = mc.newSimpleForm();
     let content = "§l" + title + "§r\n\n" + text;
     confirmForm.setContent(content);
-    confirmForm.addButton("确认发布","textures/ui/send_icon");
-    confirmForm.addButton("< 返回编辑","textures/ui/undoArrow");
+    confirmForm.addButton(LANG.RELEASE_CONFIRM,"textures/ui/send_icon");
+    confirmForm.addButton(LANG.BUTTON_BACK_EDIT,"textures/ui/undoArrow");
     pl.sendForm(confirmForm, (pl, id) => {
         if (id == 0) {
             //发布
             if (postFile.get("postConfig")["enableCaptcha"]) {
-                captcha(pl,"通过人机验证后即可发帖",title,text,draftId,formId,page);
+                captcha(pl,LANG.CAPTCHA_LABEL,title,text,draftId,formId,page);
             } else {
                 if (draftId != null) {
                     const postFile = new JsonConfigFile(jsonPath);
@@ -602,7 +667,7 @@ function confirm(pl,title,text,draftId,formId,page) {
     });
 }
 
-//帖子详情 窗体
+// 帖子详情 窗体
 function postDetails(pl, postId, page, formId) {
     const postFile = new JsonConfigFile(jsonPath);
     let postDetailsForm = mc.newSimpleForm();
@@ -615,7 +680,7 @@ function postDetails(pl, postId, page, formId) {
     let time = postFile.get("posts")[id]["time"];
     let like = postFile.get("posts")[id]["likedPlayer"].length;
     let postComment = postFile.get("posts")[id]["comment"];
-    label = `§l${title}§r\n${text}\n\n§7附带信息:\n[${playerName}] [${system}] [#${id}]\n[${time}]\n[赞 ${like}]  [评论 ${postComment.length}]§r`
+    label = tr(LANG.TEXT_POST_DETAIL) + `§r`;
     if (like != 0) {
         label = label + "\n\n§4❤§r " + postFile.get("posts")[id]["likedPlayer"][0];
         for (let i=1; i<like; i++) {
@@ -623,16 +688,16 @@ function postDetails(pl, postId, page, formId) {
         }
     }
     if (postComment.length != 0) {
-        label = label + `\n${line}\n<§l评论区§r>\n`;
+        label = label + `\n${line}\n<§l` + LANG.COMMENT_AREA + `§r>\n`;
         for (let i=0; i<postComment.length; i++) {
             label = label + `\n§7[#${postComment[i].id}]§r\n[${postComment[i].playerName}]\n${postComment[i].text}\n`;
         }
     }
-    postDetailsForm.setTitle("帖子详情");
+    postDetailsForm.setTitle(LANG.TITLE_POST_DETAIL);
     postDetailsForm.setContent(label);
-    postDetailsForm.addButton("评论","textures/ui/comment");
-    postDetailsForm.addButton("举报该帖子","textures/ui/hammer_l");
-    if (pl.xuid == postFile.get("posts")[postId]["playerXuid"] || pl.isOP()) postDetailsForm.addButton("§c删除该帖子","textures/ui/redX1");
+    postDetailsForm.addButton(LANG.COMMENT,"textures/ui/comment");
+    postDetailsForm.addButton(LANG.REPORT_THIS_POST,"textures/ui/hammer_l");
+    if (pl.xuid == postFile.get("posts")[postId]["playerXuid"] || pl.isOP()) postDetailsForm.addButton("§c" + LANG.DALETE_POST,"textures/ui/redX1");
     pl.sendForm(postDetailsForm, (pl, id) => {
         if (id == null) {
             if (formId == 0) { 
@@ -650,14 +715,15 @@ function postDetails(pl, postId, page, formId) {
     });
 }
 
-//评论帖子 窗体
+// 评论帖子 窗体
 function comment(pl, postId, page, formId, isPostDetail, text) {
     const postFile = new JsonConfigFile(jsonPath);
     let commentForm = mc.newCustomForm();
-    if (text == null) text = "输入一条友善的评论";
+    let title = postFile.get("posts")[postId]["title"];
+    if (text == null) text = LANG.COMMENT_PLACEHOLDER;
     if (isPostDetail == null) isPostDetail = false;
-    commentForm.setTitle("评论帖子");
-    commentForm.addInput(`评论 “${postFile.get("posts")[postId]["title"]}”`, text);
+    commentForm.setTitle(LANG.COMMENT_POST);
+    commentForm.addInput(tr(LANG.COMMENT_SPECIFIC_POST), text);
     pl.sendForm(commentForm, (pl, data) => {
         if (data == null) {    // 跳转到原先的窗口
             if (isPostDetail) {
@@ -673,58 +739,46 @@ function comment(pl, postId, page, formId, isPostDetail, text) {
             }
         } else {
             if (data[0] == "") {
-                comment(pl, postId, page, formId, isPostDetail, "emm...你好像什么都没写啊")
+                comment(pl, postId, page, formId, isPostDetail, LANG.COMMENT_INFO_EMPTY)
             } else {
                 const postFile = new JsonConfigFile(jsonPath);
                 let posts = postFile.get("posts");
                 let dv = pl.getDevice();
-                var now = new Date();
-                var year = now.getFullYear(); //得到年份
-                var month = now.getMonth()+1;//得到月份
-                var date = now.getDate();//得到日期
-                var hour= now.getHours();//得到小时数
-                var minute= now.getMinutes();//得到分钟数
-                var second= now.getSeconds();//得到秒数
-                let hour0 = String(hour);
-                let minute0 = String(minute);
-                let second0 = String(second);
-                if (hour >= 0 && hour <= 9) hour0 = "0" + String(hour);
-                if (minute >= 0 && minute <= 9) minute0 = "0" + String(minute);
-                if (second >= 0 && second <= 9) second0 = "0" + String(second);
-                let timeStr = `${year}.${month}.${date} ${hour0}:${minute0}:${second0}`; 
+                var date = new Date();
+                var now = date.getTime();
                 posts[postId]["comment"][posts[postId]["comment"].length] = {
                     "id": posts[postId]["comment"].length,
                     "text": data[0],
                     "playerName": pl.realName,
                     "playerXuid": pl.xuid,
                     "device": dv.os,
-                    "time": timeStr,
+                    "time": now,
                     "likedPlayer": [],
                     "visible": true,
                     "report": false
                 };
                 postFile.set("posts", posts);
-                pl.tell(`评论发布成功§7[#${posts[postId]["comment"].length}]`);
+                pl.tell(LANG.COMMENT_SUCCESS + `§7[#${posts[postId]["comment"].length}]`);
                 postDetails(pl, postId, page, formId);
             }
         }
     });
 }
 
-//人机验证 窗体
+// 人机验证 窗体
 function captcha(pl,label,title,text,draftId,formId,page) {
     if (label == null) label = "";
     let code = Math.floor(Math.random()*21);
     let captchaForm = mc.newCustomForm();
-    captchaForm.setTitle("人机验证");
-    captchaForm.addLabel(`${label}\n滑块滑动到相应数字来通过验证。\n验证码：${code}`);
-    captchaForm.addStepSlider("验证码",["0","1","2","3",'4','5',"6",'7',"8",'9',`10`,`11`,'12','13',"14",`15`,'16',`17`,"18","19","20"]);
+    captchaForm.setTitle(LANG.TITLE_CAPTCHA);
+    captchaForm.addLabel(tr(LANG.TEXT_CAPTCHA));
+    captchaForm.addStepSlider(LANG.CAPTCHA_CODE,["0","1","2","3",'4','5',"6",'7',"8",'9',`10`,`11`,'12','13',"14",`15`,'16',`17`,"18","19","20"]);
     pl.sendForm(captchaForm, (pl,data) => {
         if (data == null) {
             newPost(pl,title,text,null,draftId,formId,page);
             return false;
         } else if (data[1] != code) {
-            label = "验证失败，请重试\n";
+            label = LANG.CAPTCHA_FAILED + "\n";
             captcha(pl,label,title,text,draftId,formId,page);
         } else {
             sendPost(pl, title, text, draftId);
@@ -738,27 +792,8 @@ function sendPost(pl,title,text,draftId) {
     const postFile = new JsonConfigFile(jsonPath);
     let posts = postFile.get("posts");
     let dv = pl.getDevice();
-    var now = new Date();
-    var year = now.getFullYear(); //得到年份
-    var month = now.getMonth()+1;//得到月份
-    var date = now.getDate();//得到日期
-    // var day = now.getDay();//得到周几
-    var hour= now.getHours();//得到小时数
-    var minute= now.getMinutes();//得到分钟数
-    var second= now.getSeconds();//得到秒数
-    let hour0 = String(hour);
-    let minute0 = String(minute);
-    let second0 = String(second);
-    if (hour >= 0 && hour <= 9) {
-        hour0 = "0" + String(hour);
-    }
-    if (minute >= 0 && minute <= 9) {
-        minute0 = "0" + String(minute);
-    }
-    if (second >= 0 && second <= 9) {
-        second0 = "0" + String(second);
-    }
-    let timeStr = `${year}.${month}.${date} ${hour0}:${minute0}:${second0}`; 
+    var date = new Date();
+    var now = date.getTime();
     let thisPost = {
         "id": posts.length,
         "title": title,
@@ -766,7 +801,7 @@ function sendPost(pl,title,text,draftId) {
         "playerName": pl.realName,
         "playerXuid": pl.xuid,
         "device": dv.os,
-        "time": timeStr,
+        "time": now,
         "likedPlayer": [],
         "visible": true,
         "report": false,
@@ -774,7 +809,7 @@ function sendPost(pl,title,text,draftId) {
     };
     posts[posts.length] = thisPost;
     postFile.set("posts", posts);
-    pl.tell(`帖子已发布§7[#${posts.length-1}]`);
+    pl.tell(LANG.POST_RELEASE_SUCCESS + `§7[#${posts.length-1}]`);
     allPost(pl);
     // 删除草稿
     if (draftId != null) {
@@ -788,27 +823,16 @@ function sendPost(pl,title,text,draftId) {
 function report(pl, postId, formId, page, isPostDetail) {
     let reportForm = mc.newCustomForm();
     const postFile = new JsonConfigFile(jsonPath);
-    reportForm.setTitle("举报帖子");
-    reportForm.addInput(`举报“${postFile.get("posts")[postId]["title"]}”\n\n举报理由（选填）`, "言论不当、发表广告、违法违规 etc.");
+    let title = postFile.get("posts")[postId]["title"];
+    reportForm.setTitle(LANG.TITLE_PEPORT_FORM);
+    reportForm.addInput(tr(LANG.TEXT_REPORT), LANG.REPORT_REASON_PLACEHOLDER);
     pl.sendForm(reportForm, (pl, data) => {
         if (data != null) {
             const postFile = new JsonConfigFile(jsonPath);
             let reportedPost = postFile.get("report");
             let reportId = reportedPost.length;
-            var now = new Date();
-            var year = now.getFullYear(); //得到年份
-            var month = now.getMonth()+1;//得到月份
-            var date = now.getDate();//得到日期
-            var hour= now.getHours();//得到小时数
-            var minute= now.getMinutes();//得到分钟数
-            var second= now.getSeconds();//得到秒数
-            let hour0 = String(hour);
-            let minute0 = String(minute);
-            let second0 = String(second);
-            if (hour >= 0 && hour <= 9) hour0 = "0" + String(hour);
-            if (minute >= 0 && minute <= 9) minute0 = "0" + String(minute);
-            if (second >= 0 && second <= 9) second0 = "0" + String(second);
-            let timeStr = `${year}.${month}.${date} ${hour0}:${minute0}:${second0}`; 
+            var date = new Date();
+            var now = date.getTime();
             for (let i=0; i<reportedPost.length; i++) {
                 if (postId == reportedPost[i]["postId"]) {
                     reportId = i;
@@ -823,14 +847,14 @@ function report(pl, postId, formId, page, isPostDetail) {
                 let thisReport = {
                     "postId":postId,
                     "whistleblower":[pl.realName],
-                    "time":[timeStr],
+                    "time":[now],
                     "remark":[data[0]],
                     "isProcessed": false
                 };
                 reportedPost[reportedPost.length] = thisReport;
             }
             postFile.set("report", reportedPost);
-            pl.tell(`已将举报提交给管理员§7[#${postId}]`);
+            pl.tell(LANG.REPORT_SUCCESS + `§7[#${postId}]`);
             if (isPostDetail) {
                 postDetails(pl, postId, page, formId);
             } else {
@@ -860,11 +884,11 @@ function deleteConfirm(pl, postId, formId, page, isPostDetail) {
     let deleteConfirmForm = mc.newSimpleForm();
     if (page == null) page = 1;
     let title = postFile.get("posts")[postId]["title"];
-    let content = `您确定要删除 “${title}” 吗?这个帖子将会失去！（很长时间！）`;
-    deleteConfirmForm.setTitle(`删除帖子?`);
+    let content = tr(LANG.CONTENT_POST_DELETE_FORM);
+    deleteConfirmForm.setTitle(LANG.TITLE_POST_DELETE_FORM);
     deleteConfirmForm.setContent(content);
-    deleteConfirmForm.addButton("§c删除","textures/ui/redX1");
-    deleteConfirmForm.addButton("取消","textures/ui/undoArrow");
+    deleteConfirmForm.addButton("§c" + LANG.DELETE,"textures/ui/redX1");
+    deleteConfirmForm.addButton(LANG.CANCEL,"textures/ui/undoArrow");
     pl.sendForm(deleteConfirmForm, (pl, id) => {
         if (id == null) {
             if (isPostDetail) {
@@ -883,7 +907,7 @@ function deleteConfirm(pl, postId, formId, page, isPostDetail) {
                     let posts = postFile.get("posts");
                     posts[postId]["visible"] = false;
                     postFile.set("posts", posts);
-                    pl.tell(`帖子已删除§7[#${postId}]`);
+                    pl.tell(LANG.POST_DELETE_SUCCESS + `§7[#${postId}]`);
                     if (formId == 1) {
                         myPost(pl, 1);
                     } else if (formId == 0) {
@@ -909,18 +933,18 @@ function draftDeleteConfirm(pl, draftId, title, text) {
     let emptyTitle = false;
     let emptyText = false;
     if (title == "") {
-        title = "§7（无标题）§r";
+        title = "§7" + LANG.EMPTY_TITLE + "§r";
         emptyTitle = true;
     }
     if (text == "") {
-        text = "§7（无内容）§r";
+        text = "§7" + LANG.EMPTY_TEXT + "§r";
         emptyText = true;
     }
     let draftDeleteConfirmForm = mc.newSimpleForm();
-    draftDeleteConfirmForm.setTitle("删除草稿");
-    draftDeleteConfirmForm.setContent(`确定丢弃这个草稿？\n\n标题：${title}\n正文：${text}`);
-    draftDeleteConfirmForm.addButton("§c丢弃","textures/ui/redX1");
-    draftDeleteConfirmForm.addButton("返回编辑","textures/ui/undoArrow");
+    draftDeleteConfirmForm.setTitle(LANG.TITLE_DELETEDRAFT_FORM);
+    draftDeleteConfirmForm.setContent(tr(LANG.DRAFT_DELETE_CONFIRM));
+    draftDeleteConfirmForm.addButton("§c" + LANG.DRAFT_DELETE,"textures/ui/redX1");
+    draftDeleteConfirmForm.addButton(LANG.DRAFT_BACK_TO_EDIT,"textures/ui/undoArrow");
     pl.sendForm(draftDeleteConfirmForm, (pl, id) => {
         if (id == null) {
             editDraft(pl);
@@ -931,7 +955,7 @@ function draftDeleteConfirm(pl, draftId, title, text) {
                     let draft = postFile.get("draft");
                     draft[draftId]["visible"] = false;
                     postFile.set("draft", draft);
-                    pl.tell(`草稿已丢弃§7[#${draftId}]`);
+                    pl.tell(LANG.DRAFT_DETELE_SUCCESS + `§7[#${draftId}]`);
                     editDraft(pl);
                     break;
                 case 1:
@@ -946,9 +970,9 @@ function draftDeleteConfirm(pl, draftId, title, text) {
 function requireById(pl) {
     const postFile = new JsonConfigFile(jsonPath);
     let requireByIdForm = mc.newCustomForm();
-    let label = `输入帖子ID`;
+    let label = LANG.INPUT_POST_ID;
     if (postFile.get("posts").length > 0) label = `${label} [0,${postFile.get("posts").length - 1}]`; 
-    requireByIdForm.setTitle("通过 ID 查询帖子");
+    requireByIdForm.setTitle(LANG.TITLE_REQUIREBYID_FORM);
     requireByIdForm.addInput(label);
     pl.sendForm(requireByIdForm, (pl, data) => {
         if (data != null) {
@@ -963,14 +987,14 @@ function requireById(pl) {
             if (data[0] == "") isNumber = false;
             if (isNumber == true) {
                 if (Number(data[0]) >= postFile.get("posts").length) {
-                    pl.tell("不存在这个帖子");
+                    pl.tell(LANG.POST_NOT_FOUND);
                     requireById(pl);
                     return;
                 }
                 let postId = Number(data[0]);
                 postAllInfo(pl, postId);
             } else {
-                pl.tell("数据输入错误");
+                pl.tell(LANG.INPUT_INVALID);
                 requireById(pl);
             }
         }
@@ -988,31 +1012,43 @@ function postAllInfo(pl, postId) {
     let isReported = false;
     let reportId = -1;
     let reportStr = "";
+    let tmpTime = thisPost.time;
     if (likedPlayerLength != 0) {
-        likedPlayerStr = `点赞的玩家：${thisPost["likedPlayer"]}`
+        likedPlayerStr = LANG.LIKED_PLAYER + `:${thisPost["likedPlayer"]}`
     }
-    txt = `标题：${thisPost.title}\n正文：${thisPost.text}\n\n发布者：${thisPost.playerName}\nXUID：${thisPost.playerXuid}\n\n系统：${thisPost.device}\n时间：${thisPost.time}\n\n${likedPlayerStr}`
+    if (typeof(tmpTime) == 'string') {    // 处理 time (版本遗留)
+        time = tmpTime;
+    } else {
+        time = new Date(tmpTime).toISOString();
+    }
+    txt = tr(LANG.TEXT_POST_ALL_DETAIL);
     for (let i=0; i<report.length; i++) {    // 遍历寻找举报记录
         if (report[i]["postId"] == postId) {
             isReported = true;
             reportId = i;
-            reportStr = "举报信息：\n";
+            reportStr = LANG.REPORT_INFO + ":\n";
             break;
         }
     }
     if (isReported) {
-        txt = `${txt}\n\n\n>> ${report[reportId]["whistleblower"].length}条举报 <<\n`
+        let reportCnt = report[reportId]["whistleblower"].length;
+        txt += "\n\n\n" + tr(LANG.REPORT_CNT) + "\n"
         for (let i=0; i<report[reportId]["whistleblower"].length; i++) {
             let whistleblower = report[reportId]["whistleblower"][i];
-            let time = report[reportId]["time"][i];
+            let tmpTime = report[reportId]["time"][i];
             let remark = report[reportId]["remark"][i];
-            txt = `${txt}\n举报者：${whistleblower}\n时间：${time}\n备注：${remark}\n`;
+            if (typeof(tmpTime) == 'string') {    // 处理 time (版本遗留)
+                time = tmpTime;
+            } else {
+                time = new Date(tmpTime).toISOString();
+            }
+            txt += `\n${LANG.WHISTLEBLOWER}:${whistleblower}\n${LANG.TIME}:${time}\n${LANG.REMARK}:${remark}\n`;
         }
     }
-    postAllInfoForm.setTitle(`#${postId} 详细信息`);
+    postAllInfoForm.setTitle(tr(LANG.TITLE_POST_ALL_INFO));
     postAllInfoForm.setContent(txt);
-    postAllInfoForm.addButton(`可见：${thisPost["visible"]}`);
-    postAllInfoForm.addButton(`< 返回`,"textures/ui/undoArrow");
+    postAllInfoForm.addButton(LANG.VISIBLE + `: ${thisPost["visible"]}`);
+    postAllInfoForm.addButton(LANG.BUTTON_BACK, "textures/ui/undoArrow");
     
     pl.sendForm(postAllInfoForm, (pl, id) => {
         if (id != null) {
@@ -1033,11 +1069,11 @@ function postAllInfo(pl, postId) {
 
 function whatToDoNext(pl, formId, page) {
     let whatToDoNextForm = mc.newSimpleForm();
-    whatToDoNextForm.setTitle("接下来的事");
-    whatToDoNextForm.setContent("帖子已存储到草稿，接下来你想要...");
-    whatToDoNextForm.addButton("退出","textures/ui/undoArrow");
-    whatToDoNextForm.addButton("查看草稿");
-    if (page != null) whatToDoNextForm.addButton("继续浏览");
+    whatToDoNextForm.setTitle(LANG.TITLE_NEXT);
+    whatToDoNextForm.setContent(LANG.CONTENT_NEXT);
+    whatToDoNextForm.addButton(LANG.BUTTON_EXIT,"textures/ui/undoArrow");
+    whatToDoNextForm.addButton(LANG.BUTTON_VIEW_DRAFT);
+    if (page != null) whatToDoNextForm.addButton(LANG.BUTTON_CONTINUE);
     pl.sendForm(whatToDoNextForm, (pl, id) => {
         if (id != null) {
             switch (id) {
@@ -1061,50 +1097,73 @@ function whatToDoNext(pl, formId, page) {
     );
 }
 
-// // 检验配置文件合法
-// function isLegal(name) {
-//     const postFile = new JsonConfigFile(jsonPath);
-//     let postConfig = postFile.get("postConfig");
-//     let changed = false;
-//     let value = postFile.get("postConfig")[name];
-//     if (name=="name") {
-//         if (typeof(value)!=String) {
-//             postConfig[name] = "Server";
-//             changed == true;
-//         }
+function languageSetting(pl) {
+    LANG = loadLangFile(pl);
+    const postFile = new JsonConfigFile(jsonPath);
+    let langForm = mc.newSimpleForm();
+    langForm.setTitle(LANG.TITLE_LANGUAGE);
+    langForm.setContent(LANG.CONTENT_LANGUAGE);
+    langForm.addButton(LANG.BUTTON_BACK,"textures/ui/undoArrow");
+    let allLangFile = File.getFilesList(LANG_CONFIG_DIR);
+    for (let i in allLangFile) {
+        let tmpLangFile = new JsonConfigFile(LANG_CONFIG_DIR + allLangFile[i]);
+        let tmpLangName = tmpLangFile.get("LANGUAGE_REGION_NAME");
+        if (allLangFile[i] == postFile.get("lang")[pl.realName]) tmpLangName = `§e> §r§l ${tmpLangName} §r§e <§r`
+        langForm.addButton(tmpLangName);
+    }
+    pl.sendForm(langForm, (pl, id) => {
+        if (id != null) {
+            switch (id) {
+                case 0:
+                    main(pl);
+                    break;
+                case id:
+                    const postFile = new JsonConfigFile(jsonPath);
+                    let tempLang = postFile.get("lang");
+                    tempLang[pl.realName] = allLangFile[id - 1];
+                    postFile.set("lang", tempLang);
+                    languageSetting(pl);
+            }
+        }
+    });
+}
+
+function loadLangFile(pl) {
+    const jsonPath = "plugins/post/post.json";
+    const postFile = new JsonConfigFile(jsonPath);
+    let tmpLangKey = postFile.get("lang");
+    let langFileName;
+    if (tmpLangKey[pl.realName] != undefined) {
+        langFileName = tmpLangKey[pl.realName];
+    } else {
+        langFileName = "zh_CN.json";
+    }
+    const langFilePath = "plugins/post/lang/" + langFileName;
+    const langFile = new JsonConfigFile(langFilePath);
+    const jsonStr = langFile.read();
+    LANG = JSON.parse(jsonStr);
+    return LANG;
+}
+
+// function tr0(str) {
+//     tmpStr = str;
+//     for (let i = 1; i <= arguments.length - 1; i++) {
+//         tmpStr = tmpStr.replace("%a", arguments[i]);
 //     }
-//     else if (name=="textLimit") {
-//         if (typeof(value)!=Number) {
-//             postConfig[name] = 100;
-//             changed == true;
-//         } else if (value <= 0 || value > 100) {
-//             postConfig[name] = 100;
-//             changed == true;
-//         }
-//     }
-//     else if (name=="titleLimit") {
-//         if (typeof(value)!=Number) {
-//             postConfig[name] = 50;
-//             changed == true;
-//         } else if (value <= 0 || value > 100) {
-//             postConfig[name] = 50;
-//             changed == true;
-//         }
-//     }
-//     else if (name=="postsPerPage") {
-//         if (typeof(value)!=Number) {
-//             postConfig[name] = 15;
-//             changed == true;
-//         } else if (value <= 0 || value > 100) {
-//             postConfig[name] = 15;
-//             changed == true;
-//         }
-//     }
-//     else if (name=="enableCaptcha") {
-//         if (typeof(value)!=Boolean) {
-//             postConfig[name] = true;
-//             changed == true;
-//         }
-//     }
-//     if (changed) postFile["postConfig"].set(name, postConfig);
+//     return tmpStr;
 // }
+
+function tr(tmpStr) {
+    let str = tmpStr;
+    var patt = /%.*?%/g;
+    var patt1 = /%.*?%/i;
+    var patt2 = /(?<=\%).+?(?=\%)/i;
+    var matchedStr = str.match(patt);
+    var matchedStr1, matchedStr2;
+    for (let i = 0; i < matchedStr.length; i++) {
+        var matchedStr1 = str.match(patt1);
+        var matchedStr2 = str.match(patt2);
+        str = str.replace(matchedStr1,eval(matchedStr2[0]));
+    }
+    return str;
+}
